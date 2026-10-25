@@ -1,6 +1,7 @@
 package redisqueue
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -50,10 +51,13 @@ func MustNew(client redis.UniversalClient, cfg Config) *Queue {
 
 // Enqueue 原子化保存任务数据，并把任务 ID 追加到对应优先级 list。
 // 重复任务 ID 会被拒绝，避免调用方误投导致同一任务重复处理。
+// Payload 会被复制，返回的 Task 不共享调用方的输入缓冲区；空输入统一返回非 nil 的空切片。
 func (q *Queue) Enqueue(ctx context.Context, req EnqueueRequest) (*Task, error) {
 	if req.ID == "" {
 		return nil, ErrEmptyTaskID
 	}
+	// 固定本次投递的字节内容，供 Redis 写入、重试恢复和返回结果共同使用。
+	req.Payload = append([]byte{}, req.Payload...)
 	now := q.now().UnixMilli()
 
 	// 入队阶段遇到 Redis/Lua 临时错误时，允许同一次调用最多补偿重试 3 次。
@@ -105,7 +109,7 @@ func (q *Queue) recoverEnqueueTask(ctx context.Context, req EnqueueRequest, now 
 	if err != nil || task == nil {
 		return nil, false
 	}
-	if task.Payload != req.Payload || task.Priority != req.Priority {
+	if !bytes.Equal(task.Payload, req.Payload) || task.Priority != req.Priority {
 		return nil, false
 	}
 	if task.Attempts != 0 || task.EnqueuedAt != now || task.UpdatedAt != now {
@@ -357,7 +361,7 @@ func (q *Queue) loadTask(ctx context.Context, id string) (*Task, error) {
 	}
 	return &Task{
 		ID:         id,
-		Payload:    payload,
+		Payload:    []byte(payload),
 		Priority:   parseStringInt64(priorityCmd.Val()),
 		Attempts:   parseStringInt64(attemptsCmd.Val()),
 		EnqueuedAt: parseStringInt64(enqueuedCmd.Val()),

@@ -1,6 +1,7 @@
 package redisqueue
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"sync"
@@ -10,7 +11,7 @@ import (
 
 func enqueueAndReserve(t *testing.T, q *Queue, id string) *Task {
 	t.Helper()
-	if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: "payload"}); err != nil {
+	if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: []byte("payload")}); err != nil {
 		t.Fatal(err)
 	}
 	return reserveForTest(t, q)
@@ -57,7 +58,7 @@ func TestReceiptRejectsPreviousReservation(t *testing.T) {
 				if ok, err := q.Ack(ctx, old.ID, old.Receipt); err != nil || !ok {
 					t.Fatalf("确认失败：%v %v", ok, err)
 				}
-				if _, err := q.Enqueue(ctx, EnqueueRequest{ID: old.ID, Payload: "new payload"}); err != nil {
+				if _, err := q.Enqueue(ctx, EnqueueRequest{ID: old.ID, Payload: []byte("new payload")}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -75,7 +76,7 @@ func TestReceiptRejectsPreviousReservation(t *testing.T) {
 				t.Fatalf("旧 NACK 未被拒绝：%v", err)
 			}
 			state, err := q.InspectTask(ctx, current.ID, true)
-			if err != nil || state.Status != TaskStatusWorking || !state.HasPayload || state.Payload != current.Payload {
+			if err != nil || state.Status != TaskStatusWorking || !state.HasPayload || !bytes.Equal(state.Payload, current.Payload) {
 				t.Fatalf("旧请求破坏了当前任务：%+v %v", state, err)
 			}
 			if ok, err := q.Ack(ctx, current.ID, current.Receipt); err != nil || !ok {
@@ -140,7 +141,7 @@ func TestWorkerPanicLeavesTaskReclaimable(t *testing.T) {
 	defer cleanup()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "panic", Payload: "payload"}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "panic", Payload: []byte("payload")}); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan error, 1)

@@ -6,6 +6,7 @@ import (
 
 // InspectTask 按任务 ID 查询运行状况。
 // includePayload=false 时只返回是否存在 payload，不返回 payload 内容，避免误用于日志。
+// 未请求正文或正文不存在时 Payload 为 nil；存在的空正文返回非 nil 的空切片。
 func (q *Queue) InspectTask(ctx context.Context, id string, includePayload bool) (*TaskInspect, error) {
 	if id == "" {
 		return nil, ErrEmptyTaskID
@@ -37,9 +38,12 @@ func (q *Queue) InspectTask(ctx context.Context, id string, includePayload bool)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := stringAt(reply, 3)
-	if err != nil {
-		return nil, err
+	var payload []byte
+	if includePayload && hasPayload == 1 {
+		payload, err = bytesAt(reply, 3)
+		if err != nil {
+			return nil, err
+		}
 	}
 	priority, err := intAt(reply, 4)
 	if err != nil {

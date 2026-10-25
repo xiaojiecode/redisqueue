@@ -19,9 +19,10 @@ const (
 )
 
 // EnqueueRequest 描述要写入 ready 队列的任务。
+// 调用方负责序列化，且不得在 Enqueue 返回前并发修改 Payload。
 type EnqueueRequest struct {
 	ID       string // 业务侧唯一任务 ID。
-	Payload  string // 任务内容，组件不解析，日志不会打印该字段。
+	Payload  []byte // 原始任务字节；nil 和空切片都表示空消息，组件不解析内容。
 	Priority int64  // 优先级，数值越大越优先。
 }
 
@@ -29,7 +30,7 @@ type EnqueueRequest struct {
 type Task struct {
 	Receipt    string `json:"receipt,omitempty"`     // 本次领取的随机凭证，仅领取结果包含；ACK/NACK 必须原样提交。
 	ID         string `json:"id"`                    // 业务侧唯一任务 ID。
-	Payload    string `json:"payload"`               // 任务内容。
+	Payload    []byte `json:"payload"`               // 原始任务字节；JSON 序列化时编码为 Base64 字符串。
 	Priority   int64  `json:"priority"`              // 优先级，数值越大越优先。
 	Attempts   int64  `json:"attempts"`              // 已领取尝试次数。
 	EnqueuedAt int64  `json:"enqueued_at"`           // 入队时间，毫秒时间戳。
@@ -70,7 +71,7 @@ type TaskInspect struct {
 	Status        string `json:"status"`                   // ready、working、dead、done 或 orphan。
 	Exists        bool   `json:"exists"`                   // 是否仍有任务元数据或队列索引。
 	HasPayload    bool   `json:"has_payload"`              // payload 是否仍保留。
-	Payload       string `json:"payload,omitempty"`        // 任务内容，includePayload=true 时返回。
+	Payload       []byte `json:"payload,omitempty"`        // 原始任务字节，仅 includePayload=true 且正文存在时返回。
 	Priority      int64  `json:"priority"`                 // 优先级。
 	Attempts      int64  `json:"attempts"`                 // 已领取尝试次数。
 	EnqueuedAt    int64  `json:"enqueued_at"`              // 入队时间，毫秒时间戳。

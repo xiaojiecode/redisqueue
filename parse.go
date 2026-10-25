@@ -33,6 +33,21 @@ func stringAt(items []any, idx int) (string, error) {
 	}
 }
 
+// bytesAt 读取原始字节并返回独立缓冲区，拒绝字符串和字节切片以外的类型。
+func bytesAt(items []any, idx int) ([]byte, error) {
+	if idx < 0 || idx >= len(items) {
+		return nil, fmt.Errorf("redisqueue: missing lua result index %d", idx)
+	}
+	switch v := items[idx].(type) {
+	case string:
+		return []byte(v), nil
+	case []byte:
+		return append([]byte{}, v...), nil
+	default:
+		return nil, fmt.Errorf("redisqueue: unexpected payload lua result %T", v)
+	}
+}
+
 func intAt(items []any, idx int) (int64, error) {
 	if idx >= len(items) {
 		return 0, fmt.Errorf("redisqueue: missing lua result index %d", idx)
@@ -61,7 +76,7 @@ func taskFromReserve(items []any) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, err := stringAt(items, 1)
+	payload, err := bytesAt(items, 1)
 	if err != nil {
 		return nil, err
 	}

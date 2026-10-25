@@ -2,14 +2,14 @@
 
 [![测试](https://github.com/xiaojiecode/redisqueue/actions/workflows/test.yml/badge.svg)](https://github.com/xiaojiecode/redisqueue/actions/workflows/test.yml)
 
-版本：v0.1.1
+版本：v0.2.0
 
 `redisqueue` 是 Go Redis 任务队列组件，适合轻量异步任务、后台补偿任务和需要优先级控制的内部任务流。
 
 需要 Go 1.26 或更新版本，客户端使用 go-redis/v9。安装：
 
 ```sh
-go get github.com/xiaojiecode/redisqueue@v0.1.1
+go get github.com/xiaojiecode/redisqueue@v0.2.0
 ```
 
 导入 `github.com/xiaojiecode/redisqueue`，Redis 客户端由调用方创建和关闭。完整可编译示例见 `example_test.go`。
@@ -88,10 +88,41 @@ queue := redisqueue.MustNew(client, redisqueue.Config{
 
 _, err := queue.Enqueue(ctx, redisqueue.EnqueueRequest{
 	ID:       "task-123",
-	Payload:  `{"resource_id":"r_001"}`,
+	Payload:  []byte(`{"resource_id":"r_001"}`),
 	Priority: 10,
 })
 ```
+
+## Payload 字节与序列化
+
+`EnqueueRequest.Payload`、`Task.Payload` 和 `TaskInspect.Payload` 均为 `[]byte`。队列原样保存和返回消息字节，不解析内容，也不自动执行 JSON 编码或解码。调用方可使用 JSON、Protobuf 或压缩格式。
+
+```go
+payload, err := json.Marshal(event)
+if err != nil {
+    return err
+}
+_, err = queue.Enqueue(ctx, redisqueue.EnqueueRequest{ID: "task-123", Payload: payload})
+```
+
+消费者直接使用 `json.Unmarshal(task.Payload, &event)`，无需先做字符串转换。
+
+### 内存与空值
+
+- `Enqueue` 复制输入字节，返回的 `Task.Payload` 不与调用方输入共享可写内存。调用结束后可以复用输入缓冲区；调用期间不得并发修改它。
+- 查询或领取结果属于调用方，修改返回的字节不会改写 Redis 中的消息。
+- `nil` 和 `[]byte{}` 都是有效的空消息，Redis 会保存一个存在但长度为零的字段。入队、领取、死信读取以及包含正文的任务检查均把已存在的空消息返回为非 nil 的空切片。
+- `InspectTask(..., false)` 或任务正文不存在时，`Payload` 为 nil。判断正文是否存在使用 `HasPayload`，不要根据字节长度判断。
+
+### JSON 表示与 v0.2.0 升级
+
+直接用标准库 `encoding/json` 序列化 `Task` 或 `TaskInspect` 时，非空 `Payload` 会编码为 Base64 字符串，例如 `[]byte("hello")` 表示为 `"aGVsbG8="`。这只是结构体的 JSON 表示；Redis 中存储的仍是原始字节。
+
+`Task.Payload` 的空切片编码为 `""`，手动构造的 nil 字段编码为 `null`。`TaskInspect.Payload` 带有 `omitempty`，nil 和空切片都会省略，仍可通过 `has_payload` 判断正文是否存在。
+
+v0.2.0 是 Go API 的不兼容变更：原先的字符串输入改为 `[]byte(text)`，文本展示按需要使用 `string(task.Payload)`，内容比较使用 `bytes.Equal`。直接将任务结构体作为 HTTP JSON 响应的调用方也需要适配 Base64 表示。
+
+Redis Key 和保存的消息字节格式保持一致，v0.1.1 已有队列数据不需要迁移，Receipt 和 ACK/NACK 行为保持不变。此版本不增加通用序列化接口或自定义 JSON 编码。
 
 ## Worker 消费
 

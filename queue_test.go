@@ -36,9 +36,9 @@ func TestEnqueueReservePriorityAndFIFO(t *testing.T) {
 	defer cleanup()
 
 	for _, req := range []EnqueueRequest{
-		{ID: "low", Payload: "low-payload", Priority: 1},
-		{ID: "high-1", Payload: "high-payload-1", Priority: 9},
-		{ID: "high-2", Payload: "high-payload-2", Priority: 9},
+		{ID: "low", Payload: []byte("low-payload"), Priority: 1},
+		{ID: "high-1", Payload: []byte("high-payload-1"), Priority: 9},
+		{ID: "high-2", Payload: []byte("high-payload-2"), Priority: 9},
 	} {
 		if _, err := q.Enqueue(ctx, req); err != nil {
 			t.Fatalf("enqueue %s: %v", req.ID, err)
@@ -79,10 +79,10 @@ func TestEnqueueRejectsDuplicateID(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "same", Payload: "a", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "same", Payload: []byte("a"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue first: %v", err)
 	}
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "same", Payload: "b", Priority: 2}); !errors.Is(err, ErrDuplicateTask) {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "same", Payload: []byte("b"), Priority: 2}); !errors.Is(err, ErrDuplicateTask) {
 		t.Fatalf("enqueue duplicate err = %v, want ErrDuplicateTask", err)
 	}
 }
@@ -102,7 +102,7 @@ func TestEnqueueRetriesTemporaryRedisError(t *testing.T) {
 		srv.Close()
 	}()
 
-	task, err := q.Enqueue(ctx, EnqueueRequest{ID: "retry-ok", Payload: "payload", Priority: 7})
+	task, err := q.Enqueue(ctx, EnqueueRequest{ID: "retry-ok", Payload: []byte("payload"), Priority: 7})
 	if err != nil {
 		t.Fatalf("enqueue with retry: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestEnqueueReturnsErrorAfterRetryLimit(t *testing.T) {
 		srv.Close()
 	}()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "retry-fail", Payload: "payload", Priority: 7}); err == nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "retry-fail", Payload: []byte("payload"), Priority: 7}); err == nil {
 		t.Fatal("enqueue err = nil, want temporary redis error")
 	}
 
@@ -201,7 +201,7 @@ func TestNackRequeuesThenMovesToDLQ(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{MaxAttempts: 2})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "task", Payload: "payload", Priority: 3}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "task", Payload: []byte("payload"), Priority: 3}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	first, err := q.Reserve(ctx)
@@ -255,7 +255,7 @@ func TestNackWithoutRequeueMovesToDLQImmediately(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{MaxAttempts: 10})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "no-requeue", Payload: "payload", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "no-requeue", Payload: []byte("payload"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := q.Reserve(ctx)
@@ -286,7 +286,7 @@ func TestConcurrentReserveGetsEachTaskOnce(t *testing.T) {
 	const total = 50
 	for i := 0; i < total; i++ {
 		id := fmt.Sprintf("task-%02d", i)
-		if _, err := q.Enqueue(ctx, EnqueueRequest{ID: id, Payload: "payload", Priority: int64(i % 5)}); err != nil {
+		if _, err := q.Enqueue(ctx, EnqueueRequest{ID: id, Payload: []byte("payload"), Priority: int64(i % 5)}); err != nil {
 			t.Fatalf("enqueue %s: %v", id, err)
 		}
 	}
@@ -344,7 +344,7 @@ func TestConcurrentAckOnlyOneSucceeds(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "ack-race", Payload: "payload", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "ack-race", Payload: []byte("payload"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := q.Reserve(ctx)
@@ -389,7 +389,7 @@ func TestReclaimExpiredRequeuesThenDLQ(t *testing.T) {
 
 	now := time.UnixMilli(1000)
 	q.now = func() time.Time { return now }
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "exp", Payload: "payload", Priority: 4}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "exp", Payload: []byte("payload"), Priority: 4}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	if _, err := q.Reserve(ctx); err != nil {
@@ -426,7 +426,7 @@ func TestReclaimExpiredHonorsLimit(t *testing.T) {
 	q.now = func() time.Time { return now }
 	for i := 0; i < 3; i++ {
 		id := fmt.Sprintf("limit-%d", i)
-		if _, err := q.Enqueue(ctx, EnqueueRequest{ID: id, Payload: "payload", Priority: 1}); err != nil {
+		if _, err := q.Enqueue(ctx, EnqueueRequest{ID: id, Payload: []byte("payload"), Priority: 1}); err != nil {
 			t.Fatalf("enqueue %s: %v", id, err)
 		}
 		if _, err := q.Reserve(ctx); err != nil {
@@ -455,7 +455,7 @@ func TestRetryDeadResetsAttemptsAndPriority(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{MaxAttempts: 1})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "dead", Payload: "payload", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "dead", Payload: []byte("payload"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	task, err := q.Reserve(ctx)
@@ -488,7 +488,7 @@ func TestWorkAcksSuccessfulTask(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{})
 	defer cleanup()
 
-	if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: "ok", Payload: "payload", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: "ok", Payload: []byte("payload"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	processed := make(chan struct{})
@@ -524,7 +524,7 @@ func TestWorkNacksFailedTaskToDLQ(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{MaxAttempts: 1})
 	defer cleanup()
 
-	if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: "fail", Payload: "payload", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: "fail", Payload: []byte("payload"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	processed := make(chan struct{})
@@ -559,7 +559,7 @@ func TestWorkRespectsConcurrencyLimit(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		id := "task-" + string(rune('a'+i))
-		if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: "payload", Priority: 1}); err != nil {
+		if _, err := q.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: []byte("payload"), Priority: 1}); err != nil {
 			t.Fatalf("enqueue %s: %v", id, err)
 		}
 	}
@@ -608,7 +608,7 @@ func TestWorkRespectsDistributedTotalConcurrencyLimit(t *testing.T) {
 
 	for i := 0; i < 6; i++ {
 		id := "total-task-" + string(rune('a'+i))
-		if _, err := q1.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: "payload", Priority: 1}); err != nil {
+		if _, err := q1.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: []byte("payload"), Priority: 1}); err != nil {
 			t.Fatalf("enqueue %s: %v", id, err)
 		}
 	}
@@ -663,7 +663,7 @@ func TestWorkRespectsDistributedServiceConcurrencyLimit(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		id := "service-task-" + string(rune('a'+i))
-		if _, err := q1.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: "payload", Priority: 1}); err != nil {
+		if _, err := q1.Enqueue(context.Background(), EnqueueRequest{ID: id, Payload: []byte("payload"), Priority: 1}); err != nil {
 			t.Fatalf("enqueue %s: %v", id, err)
 		}
 	}
@@ -839,7 +839,7 @@ func TestStartStatsReporterCanStop(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "stats-task", Payload: "payload", Priority: 1}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "stats-task", Payload: []byte("payload"), Priority: 1}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	stop := q.StartStatsReporter(ctx, time.Millisecond, "svc-a")
@@ -859,14 +859,14 @@ func TestInspectTaskLifecycle(t *testing.T) {
 	q, cleanup := newTestQueue(t, Config{MaxAttempts: 1})
 	defer cleanup()
 
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "inspect", Payload: "secret-payload", Priority: 5}); err != nil {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "inspect", Payload: []byte("secret-payload"), Priority: 5}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
 	inspected, err := q.InspectTask(ctx, "inspect", false)
 	if err != nil {
 		t.Fatalf("inspect ready: %v", err)
 	}
-	if inspected.Status != TaskStatusReady || !inspected.Exists || !inspected.HasPayload || inspected.Payload != "" || inspected.ReadyPosition != 0 {
+	if inspected.Status != TaskStatusReady || !inspected.Exists || !inspected.HasPayload || inspected.Payload != nil || inspected.ReadyPosition != 0 {
 		t.Fatalf("ready inspect = %+v", inspected)
 	}
 
@@ -878,7 +878,7 @@ func TestInspectTaskLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect working: %v", err)
 	}
-	if inspected.Status != TaskStatusWorking || inspected.Payload != "secret-payload" || inspected.Attempts != 1 || inspected.DeadlineAt == 0 {
+	if inspected.Status != TaskStatusWorking || string(inspected.Payload) != "secret-payload" || inspected.Attempts != 1 || inspected.DeadlineAt == 0 {
 		t.Fatalf("working inspect = %+v", inspected)
 	}
 
@@ -926,7 +926,7 @@ func TestInspectTaskReadyPositionAndOrphan(t *testing.T) {
 	defer cleanup()
 
 	for _, id := range []string{"first", "second"} {
-		if _, err := q.Enqueue(ctx, EnqueueRequest{ID: id, Payload: "payload", Priority: 3}); err != nil {
+		if _, err := q.Enqueue(ctx, EnqueueRequest{ID: id, Payload: []byte("payload"), Priority: 3}); err != nil {
 			t.Fatalf("enqueue %s: %v", id, err)
 		}
 	}

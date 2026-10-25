@@ -39,7 +39,7 @@ func TestEnqueueRecoversLostSuccessReply(t *testing.T) {
 	client.AddHook(&loseEnqueueReply{})
 	q := MustNew(client, Config{Name: "lost-reply"})
 	ctx := context.Background()
-	task, err := q.Enqueue(ctx, EnqueueRequest{ID: "task", Payload: "payload"})
+	task, err := q.Enqueue(ctx, EnqueueRequest{ID: "task", Payload: []byte("payload")})
 	if err != nil || task == nil {
 		t.Fatalf("无法恢复入队结果：%v %v", task, err)
 	}
@@ -47,7 +47,7 @@ func TestEnqueueRecoversLostSuccessReply(t *testing.T) {
 	if err != nil || stats.Ready != 1 || stats.TotalPayload != 1 {
 		t.Fatalf("重复入队：%+v %v", stats, err)
 	}
-	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "task", Payload: "payload"}); !errors.Is(err, ErrDuplicateTask) {
+	if _, err := q.Enqueue(ctx, EnqueueRequest{ID: "task", Payload: []byte("payload")}); !errors.Is(err, ErrDuplicateTask) {
 		t.Fatalf("后续重复请求未拒绝：%v", err)
 	}
 }
