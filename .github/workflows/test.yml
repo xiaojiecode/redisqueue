@@ -1,0 +1,56 @@
+name: 测试
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.26.x', '1.27.x']
+        redis: ['7-alpine', '8-alpine']
+    services:
+      redis:
+        image: redis:${{ matrix.redis }}
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_TEST_ADDR: 127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - name: 格式与依赖检查
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go mod verify
+      - name: 构建与静态检查
+        run: |
+          go build ./...
+          go vet ./...
+      - name: 单元测试和真实 Redis 竞态测试
+        run: go test -race -shuffle=on -count=3 -timeout=5m -coverprofile=coverage.out ./...
+  cluster:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        redis: ['redis:7-alpine', 'redis:8-alpine']
+    steps:
+      - uses: actions/checkout@v4
+      - name: 三主节点 Redis Cluster 集成测试
+        env:
+          REDIS_IMAGE: ${{ matrix.redis }}
+        run: ./scripts/test-cluster.sh
